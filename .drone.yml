@@ -1,0 +1,97 @@
+kind: pipeline
+name: default
+steps:
+#готовим образ под кэш для сборки образа
+- name: prepare
+  image: busybox
+  privileged: true
+  commands:
+    - mkdir -p /cache/${DRONE_REPO}/docker
+  volumes:
+    - name: cache
+      path: /cache
+- name:  docker-build-publish
+  image: plugins/docker
+  privileged: true
+  settings:
+    repo: ebcone/selectel_Status_exporter_v3
+    tags: latest
+    username:
+      from_secret: docker_username
+    password:
+      from_secret: docker_password
+    when:
+      branch: master
+  use_cache: true
+  volumes:
+  - name: docker
+    path: /var/lib/docker
+- name: ssh
+  image: appleboy/drone-ssh
+  settings:
+    host: 10.10.5.10
+    username:
+      from_secret: ssh_user
+    key:
+      from_secret: ssh_key
+    port: 22
+    script:
+      - docker-compose -f /opt/docker/docker-compose.yml up -d --force-recreate --no-deps selectel_exporter
+    when:
+      branch: master
+
+- name: telegram
+  image: appleboy/drone-telegram
+  settings:
+    token:
+      from_secret: telegram_token
+    to:
+      from_secret: telegram_id
+    message: >
+      {{#success build.status}}
+      ✅ Build #{{build.number}} of `{{repo.name}}` succeeded.
+      📝 Commit by {{commit.author}} on `{{commit.branch}}`:
+      ```
+      {{commit.message}}
+      ```
+      🌐 {{ build.link }}
+      {{else}}
+      ❌ Build #{{build.number}} of `{{repo.name}}` failed.
+      📝 Commit by {{commit.author}} on `{{commit.branch}}`:
+      ```
+      {{commit.message}}
+      ```
+      🌐 {{ build.link }}
+      {{/success}}
+  when:
+    status: [ success, failure ]
+# Это для создание эвента роллбэк чтобы вернуться на предыдущую сборку через git push или docker run
+# drone build rollback -p DRONE_TAG=6.4.4-release exbico/mtr_exporter *номер сломанного билда* production
+- name: ssh-rollback
+  image: appleboy/drone-ssh
+  settings:
+    host:
+      from_secret: ssh_host
+    username:
+      from_secret: ssh_username
+    key:
+      from_secret: ssh_key
+    git_user:
+      from_secret: git_user
+    git_pass:
+      from_secret: git_pass
+    port: 22
+  script:
+    - echo "The current tag is rollback to ${DRONE_BUILD_NUMBER}"
+  when:
+    event:
+    - rollback
+
+#тут описываем разделы под кэш
+volumes:
+  - name: cache
+    host:
+      path: /var/cache
+  - name: docker
+    host:
+      path: /var/cache/${DRONE_REPO}/docker

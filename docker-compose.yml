@@ -1,0 +1,11 @@
+version: '3'
+
+services:
+  selectel_exporter:
+    image: ustiuzhanin/selectel_Status_exporter:staging
+    container_name: selectel_exporter
+    restart: unless-stopped
+    ports:
+      - "6789:80"
+    environment:
+      TOKEN: N3C6n53P66S4pGuS6D4m2ad5N_89326
